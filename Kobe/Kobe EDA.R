@@ -1,0 +1,522 @@
+####################################################################################################
+## Kobe EDA
+####################################################################################################
+
+## Set working directory
+setwd('C:/Users/michael.hoyer/Documents/R/Kaggle/Kobe')
+
+## Load packages
+library(dplyr)
+library(reshape2)
+library(ggplot2)
+library(Rmisc)
+library(Hmisc)
+
+## Load dataset
+data.all <- read.csv('data.csv')
+str(data.all)
+
+## How many game_id's are there?
+length(unique(data.all$game_id))
+
+## Are the game_id's ordered? ... doesn't look like it. Need to order by game_date to avoid leakage.
+data.all %>% select(game_event_id,game_date) %>% arrange(game_event_id) %>% head
+
+data.all %>% arrange(game_date) %>% head ## looks like this works
+
+
+####################################################################################################
+## Shot chart plots
+####################################################################################################
+
+## start plotting using location - all shots
+ggplot(data.all[complete.cases(data.all),],aes(x=loc_x,y=loc_y,col=factor(shot_made_flag))) +
+    geom_point(size=1.25) + 
+    scale_colour_manual(values=c('0'='red1','1'='green4')) +
+    ggtitle('All shots')
+
+## split by shot type and period
+ggplot(data.all[complete.cases(data.all),],aes(x=loc_x,y=loc_y,col=factor(shot_made_flag))) +
+    geom_point(size=1.25) + 
+    scale_colour_manual(values=c('0'='red1','1'='green4')) +
+    facet_grid(period ~ combined_shot_type) +
+    ggtitle('All shots')
+## these plots are cool but do they tell us anything? 
+## we can test how well the shot_zone categories split the court
+multiplot(
+    ggplot(data.all[complete.cases(data.all),],aes(x=loc_x,y=loc_y,col=factor(shot_made_flag))) +
+        geom_point(size=1.25,alpha=0.4) + 
+        scale_colour_manual(values=c('0'='red1','1'='green4')) +
+        facet_grid(. ~ period) +
+        ggtitle('period'),
+    ggplot(data.all[complete.cases(data.all),],aes(x=loc_x,y=loc_y,col=factor(shot_made_flag))) +
+        geom_point(size=1.25,alpha=0.4) + 
+        scale_colour_manual(values=c('0'='red1','1'='green4')) +
+        facet_grid(. ~ shot_zone_area) +
+        ggtitle('shot_zone_area'),
+    ggplot(data.all[complete.cases(data.all),],aes(x=loc_x,y=loc_y,col=factor(shot_made_flag))) +
+        geom_point(size=1.25,alpha=0.4) + 
+        scale_colour_manual(values=c('0'='red1','1'='green4')) +
+        facet_grid(. ~ shot_zone_basic) +
+        ggtitle('shot_zone_basic'),
+    ggplot(data.all[complete.cases(data.all),],aes(x=loc_x,y=loc_y,col=factor(shot_made_flag))) +
+        geom_point(size=1.25,alpha=0.4) + 
+        scale_colour_manual(values=c('0'='red1','1'='green4')) +
+        facet_grid(. ~ shot_zone_range) +
+        ggtitle('shot_zone_range')
+)
+
+
+####################################################################################################
+## Shot type data and plots
+####################################################################################################
+## action_type table (these are very specific)
+action.type.tbl <- as.data.frame(data.all %>% 
+                                   filter(!is.na(shot_made_flag)) %>% 
+                                   select(action_type,combined_shot_type,shot_made_flag) %>% 
+                                   table)
+action.type.tbl <- dcast(action.type.tbl, action_type + combined_shot_type ~ shot_made_flag,value.var='Freq')
+colnames(action.type.tbl)[3:4] <- c('Miss','Make')
+action.type.tbl <- action.type.tbl %>%
+        mutate(Pct = Make / (Make + Miss)) %>% arrange(desc(Pct)) %>%
+        filter(!is.na(Pct))
+action.type.tbl$action_type <- factor(action.type.tbl$action_type,
+                                      levels=action.type.tbl[order(action.type.tbl$combined_shot_type),
+                                                             'action_type'])
+print(action.type.tbl)
+## pretty decent at those dunks
+ggplot(action.type.tbl,aes(x=action_type,y=Pct,fill=combined_shot_type)) + 
+        geom_bar(stat='identity') +
+        ggtitle('FG% by action_type')
+## looks like there is some information to be gained by this specificity
+
+
+## combined_shot_type table
+cbind.type.tbl <- as.data.frame(data.all %>%
+                                    filter(!is.na(shot_made_flag)) %>%
+                                    select(combined_shot_type,shot_made_flag) %>%
+                                    table)
+cbind.type.tbl <- dcast(cbind.type.tbl, combined_shot_type ~ shot_made_flag,value.var='Freq')
+colnames(cbind.type.tbl)[2:3] <- c('Miss','Make')
+cbind.type.tbl <- cbind.type.tbl %>% mutate(Pct = Make / (Make + Miss)) %>% arrange(desc(Pct))
+print(cbind.type.tbl)
+
+multiplot(
+ggplot(cbind.type.tbl,aes(x=factor(combined_shot_type),y=Pct,fill=combined_shot_type)) +
+    geom_bar(stat='identity') + 
+    ggtitle('FG% by combined_shot_type'),
+ggplot(cbind.type.tbl,aes(x=factor(combined_shot_type),y=Make+Miss,fill=combined_shot_type)) + 
+    geom_bar(stat='identity') +
+    ggtitle('Total shots by combined_shot_type')
+)
+
+
+## shot_type
+shot_type.tbl <- as.data.frame(data.all %>%
+                                filter(!is.na(shot_made_flag)) %>%
+                                select(shot_type,shot_made_flag) %>%
+                                table)
+shot_type.tbl <- dcast(shot_type.tbl, shot_type ~ shot_made_flag,value.var='Freq')
+colnames(shot_type.tbl)[2:3] <- c('Miss','Make')
+shot_type.tbl <- shot_type.tbl %>% mutate(Pct = Make / (Make + Miss)) %>% arrange(desc(Pct))
+print(shot_type.tbl)
+
+multiplot(
+    ggplot(shot_type.tbl,aes(x=factor(shot_type),y=Pct,fill=shot_type)) +
+        geom_bar(stat='identity') + 
+        ggtitle('FG% by shot_type'),
+    ggplot(shot_type.tbl,aes(x=factor(shot_type),y=Make+Miss,fill=shot_type)) + 
+        geom_bar(stat='identity') +
+        ggtitle('Total shots by shot_type')
+)
+## QUIT SHOOTIN' 3's KOBE!!
+
+
+####################################################################################################
+## Shot zone data and plots
+####################################################################################################
+## shot_zone_range
+shot.dist.tbl <- as.data.frame(data.all %>% 
+                                   filter(!is.na(shot_made_flag)) %>% 
+                                   select(shot_zone_range,shot_made_flag) %>% 
+                                   table)
+shot.dist.tbl <- dcast(shot.dist.tbl,shot_zone_range ~ shot_made_flag,value.var='Freq')
+colnames(shot.dist.tbl)[2:3] <- c('Miss','Make')
+shot.dist.tbl <- shot.dist.tbl %>% mutate(Pct = Make / (Make + Miss)) %>% arrange(desc(Pct))
+shot.dist.tbl$shot_zone_range <- factor(shot.dist.tbl$shot_zone_range,
+                                      levels=shot.dist.tbl[order(shot.dist.tbl$Pct,decreasing=TRUE),
+                                                           'shot_zone_range'])
+print(shot.dist.tbl)
+
+multiplot(
+    ggplot(shot.dist.tbl,aes(x=factor(shot_zone_range),y=Pct,fill=shot_zone_range)) + 
+        geom_bar(stat='identity') + 
+        ggtitle('FG% by shot distance'),
+    ggplot(shot.dist.tbl,aes(x=factor(shot_zone_range),y=Make+Miss,fill=shot_zone_range)) + 
+        geom_bar(stat='identity') +
+        ggtitle('Total shots by shot distance')
+)
+
+## Might be better to split 0 ft. out on its own
+shot.dist.tbl.new <- data.all %>% 
+    mutate(shot_zone_range_new = ifelse(shot_distance == 0,0,shot_zone_range))
+shot.dist.tbl.new$shot_zone_range_new <- factor(shot.dist.tbl.new$shot_zone_range_new,
+                                                labels=c('0 ft.',levels(shot.dist.tbl.new$shot_zone_range)))
+shot.dist.tbl.new <- as.data.frame(shot.dist.tbl.new %>% 
+                                      filter(!is.na(shot_made_flag)) %>% 
+                                      select(shot_zone_range_new,shot_made_flag) %>% 
+                                      table)
+shot.dist.tbl.new <- dcast(shot.dist.tbl.new,shot_zone_range_new ~ shot_made_flag,value.var='Freq')
+colnames(shot.dist.tbl.new)[2:3] <- c('Miss','Make')
+shot.dist.tbl.new <- shot.dist.tbl.new %>% mutate(Pct = Make / (Make + Miss)) %>% arrange(desc(Pct))
+shot.dist.tbl.new$shot_zone_range_new <- factor(shot.dist.tbl.new$shot_zone_range_new,
+                                                levels=shot.dist.tbl.new[order(shot.dist.tbl.new$Pct,
+                                                                               decreasing=TRUE),
+                                                                         'shot_zone_range_new'])
+print(shot.dist.tbl.new)
+
+multiplot(
+    ggplot(shot.dist.tbl.new,aes(x=factor(shot_zone_range_new),y=Pct,fill=shot_zone_range_new)) + 
+        geom_bar(stat='identity') + 
+        ggtitle('FG% by shot distance'),
+    ggplot(shot.dist.tbl.new,aes(x=factor(shot_zone_range_new),y=Make+Miss,fill=shot_zone_range_new)) + 
+        geom_bar(stat='identity') +
+        ggtitle('Total shots by shot distance')
+)
+
+
+## let's compare to shot_zone_area and shot_zone_basic
+shot.zone.area.tbl <- as.data.frame(data.all %>% 
+                                   filter(!is.na(shot_made_flag)) %>% 
+                                   select(shot_zone_area,shot_made_flag) %>% 
+                                   table)
+shot.zone.area.tbl <- dcast(shot.zone.area.tbl,shot_zone_area ~ shot_made_flag,value.var='Freq')
+colnames(shot.zone.area.tbl)[2:3] <- c('Miss','Make')
+shot.zone.area.tbl <- shot.zone.area.tbl %>% mutate(Pct = Make / (Make + Miss)) %>% arrange(desc(Pct))
+shot.zone.area.tbl$shot_zone_area <- factor(shot.zone.area.tbl$shot_zone_area,
+                                        levels=shot.zone.area.tbl[order(shot.zone.area.tbl$Pct,decreasing=TRUE),
+                                                             'shot_zone_area'])
+print(shot.zone.area.tbl)
+
+multiplot(
+    ggplot(shot.zone.area.tbl,aes(x=factor(shot_zone_area),y=Pct,fill=shot_zone_area)) + 
+        geom_bar(stat='identity') + 
+        ggtitle('FG% by shot_zone_area'),
+    ggplot(shot.zone.area.tbl,aes(x=factor(shot_zone_area),y=Make+Miss,fill=shot_zone_area)) + 
+        geom_bar(stat='identity') +
+        ggtitle('Total shots by shot_zone_area')
+)
+
+shot.zone.basic.tbl <- as.data.frame(data.all %>% 
+                                        filter(!is.na(shot_made_flag)) %>% 
+                                        select(shot_zone_basic,shot_made_flag) %>% 
+                                        table)
+shot.zone.basic.tbl <- dcast(shot.zone.basic.tbl,shot_zone_basic ~ shot_made_flag,value.var='Freq')
+colnames(shot.zone.basic.tbl)[2:3] <- c('Miss','Make')
+shot.zone.basic.tbl <- shot.zone.basic.tbl %>% mutate(Pct = Make / (Make + Miss)) %>% arrange(desc(Pct))
+shot.zone.basic.tbl$shot_zone_basic <- factor(shot.zone.basic.tbl$shot_zone_basic,
+                                            levels=shot.zone.basic.tbl[order(shot.zone.basic.tbl$Pct,decreasing=TRUE),
+                                                                      'shot_zone_basic'])
+print(shot.zone.basic.tbl)
+
+multiplot(
+    ggplot(shot.zone.basic.tbl,aes(x=factor(shot_zone_basic),y=Pct,fill=shot_zone_basic)) + 
+        geom_bar(stat='identity') + 
+        ggtitle('FG% by shot_zone_basic'),
+    ggplot(shot.zone.basic.tbl,aes(x=factor(shot_zone_basic),y=Make+Miss,fill=shot_zone_basic)) + 
+        geom_bar(stat='identity') +
+        ggtitle('Total shots by shot_zone_basic')
+)
+## probably good to keep both with interactions
+
+
+####################################################################################################
+## Period, season and playoffs data and plots
+####################################################################################################
+## period
+period.tbl <- as.data.frame(data.all %>%
+                                filter(!is.na(shot_made_flag)) %>%
+                                select(period,shot_made_flag) %>%
+                                table)
+period.tbl <- dcast(period.tbl, period ~ shot_made_flag,value.var='Freq')
+colnames(period.tbl)[2:3] <- c('Miss','Make')
+period.tbl <- period.tbl %>% mutate(Pct = Make / (Make + Miss)) %>% arrange(desc(Pct))
+print(period.tbl)
+
+multiplot(
+    ggplot(period.tbl,aes(x=factor(period),y=Pct,fill=period)) +
+        geom_bar(stat='identity') + 
+        ggtitle('FG% by period'),
+    ggplot(period.tbl,aes(x=factor(period),y=Make+Miss,fill=period)) + 
+        geom_bar(stat='identity') +
+        ggtitle('Total shots by period')
+)
+## should we group 5,6,7 into just OT? Seems like there is enough subtle separation to leave it
+
+
+## season
+season.tbl <- as.data.frame(data.all %>%
+                                filter(!is.na(shot_made_flag)) %>%
+                                select(season,shot_made_flag) %>%
+                                table)
+season.tbl <- dcast(season.tbl, season ~ shot_made_flag,value.var='Freq')
+colnames(season.tbl)[2:3] <- c('Miss','Make')
+season.tbl <- season.tbl %>% mutate(Pct = Make / (Make + Miss)) %>% arrange(desc(Pct))
+print(season.tbl)
+
+multiplot(
+    ggplot(season.tbl,aes(x=factor(season),y=Pct,fill=season)) +
+        geom_bar(stat='identity') + 
+        ggtitle('FG% by season'),
+    ggplot(season.tbl,aes(x=factor(season),y=Make+Miss,fill=season)) + 
+        geom_bar(stat='identity') +
+        ggtitle('Total shots by season')
+)
+
+
+## playoffs
+playoffs.tbl <- as.data.frame(data.all %>%
+                                filter(!is.na(shot_made_flag)) %>%
+                                select(playoffs,shot_made_flag) %>%
+                                table)
+playoffs.tbl <- dcast(playoffs.tbl, playoffs ~ shot_made_flag,value.var='Freq')
+colnames(playoffs.tbl)[2:3] <- c('Miss','Make')
+playoffs.tbl <- playoffs.tbl %>% mutate(Pct = Make / (Make + Miss)) %>% arrange(desc(Pct))
+print(playoffs.tbl)
+
+multiplot(
+    ggplot(playoffs.tbl,aes(x=factor(playoffs),y=Pct,fill=playoffs)) +
+        geom_bar(stat='identity') + 
+        ggtitle('FG% by playoffs'),
+    ggplot(playoffs.tbl,aes(x=factor(playoffs),y=Make+Miss,fill=playoffs)) + 
+        geom_bar(stat='identity') +
+        ggtitle('Total shots by playoffs')
+)
+## pretty consistent actually.. 
+
+
+## playoffs and period... gets better in the fourth/OT?
+playoffs.per.tbl <- as.data.frame(data.all %>%
+                                  filter(!is.na(shot_made_flag)) %>%
+                                  select(playoffs,period,shot_made_flag) %>%
+                                  table)
+playoffs.per.tbl <- dcast(playoffs.per.tbl, playoffs + period ~ shot_made_flag,value.var='Freq')
+colnames(playoffs.per.tbl)[3:4] <- c('Miss','Make')
+playoffs.per.tbl <- playoffs.per.tbl %>% mutate(Pct = Make / (Make + Miss)) %>% arrange(desc(Pct))
+print(playoffs.per.tbl)
+
+multiplot(
+    ggplot(playoffs.per.tbl,aes(x=factor(playoffs),y=Pct,fill=playoffs)) +
+        geom_bar(stat='identity') + 
+        facet_grid(. ~ period) +
+        ggtitle('FG% by playoffs'),
+    ggplot(playoffs.per.tbl,aes(x=factor(playoffs),y=Make+Miss,fill=playoffs)) + 
+        geom_bar(stat='identity') +
+        facet_grid(. ~ period) +
+        ggtitle('Total shots by playoffs')
+)
+## Actually, pretty bad in the 4th quarter..
+
+
+####################################################################################################
+## Time Remaining
+####################################################################################################
+## minutes_remaining
+minutes_remaining.tbl <- as.data.frame(data.all %>%
+                                  filter(!is.na(shot_made_flag)) %>%
+                                  select(minutes_remaining,shot_made_flag) %>%
+                                  table)
+minutes_remaining.tbl <- dcast(minutes_remaining.tbl, minutes_remaining ~ shot_made_flag,value.var='Freq')
+colnames(minutes_remaining.tbl)[2:3] <- c('Miss','Make')
+minutes_remaining.tbl <- minutes_remaining.tbl %>% mutate(Pct = Make / (Make + Miss)) %>% arrange(desc(Pct))
+print(minutes_remaining.tbl)
+
+multiplot(
+    ggplot(minutes_remaining.tbl,aes(x=factor(minutes_remaining),y=Pct,fill=minutes_remaining)) +
+        geom_bar(stat='identity') + 
+        ggtitle('FG% by minutes_remaining'),
+    ggplot(minutes_remaining.tbl,aes(x=factor(minutes_remaining),y=Make+Miss,fill=minutes_remaining)) + 
+        geom_bar(stat='identity') +
+        ggtitle('Total shots by minutes_remaining')
+)
+
+
+## under a minute by group of seconds
+clutch <- data.all %>% 
+    filter(minutes_remaining == 0 & !is.na(shot_made_flag)) %>%
+    mutate(secsBucket = ifelse(seconds_remaining > 50,'51-60',
+                        ifelse(seconds_remaining > 40,'41-50',
+                        ifelse(seconds_remaining > 30,'31-40',
+                        ifelse(seconds_remaining > 20,'21-30',
+                        ifelse(seconds_remaining > 10,'11-20','10 or less'))))))
+clutch <- as.data.frame(clutch %>%
+                            select(secsBucket,shot_made_flag) %>%
+                            table)
+clutch <- dcast(clutch, secsBucket ~ shot_made_flag,value.var='Freq')
+colnames(clutch)[2:3] <- c('Miss','Make')
+clutch <- clutch %>% mutate(Pct = Make / (Make + Miss)) %>% arrange(desc(Pct))
+print(clutch)
+
+multiplot(
+    ggplot(clutch,aes(x=secsBucket,y=Pct,fill=secsBucket)) +
+        geom_bar(stat='identity') +
+        ggtitle('FG% by seconds left'),
+    ggplot(clutch,aes(x=secsBucket,y=Make+Miss,fill=secsBucket)) +
+        geom_bar(stat='identity') +
+        ggtitle('Total shots by seconds left')
+)
+## probably best to come up with some time remaining feature that buckets by minute until the final
+## minute of the quarter (minutes_remaining == 0)
+
+## let's do some clustering of minutes remaining
+d <- dist(data.all[!is.na(data.all$shot_made_flag),c('minutes_remaining','shot_made_flag')])
+minClust <- hclust(d,'ward.D2')
+plot(minClust)
+
+## need to try some cuts
+grps1 <- cutree(minClust,k=2)
+grps1 <- as.data.frame(cbind(data.all[!is.na(data.all$shot_made_flag),'minutes_remaining'],grps1))
+colnames(grps1) <- c('minutes_remaining','groups')
+table(grps1$minutes_remaining,grps1$groups)
+
+grps2 <- cutree(minClust,k=3)
+grps2 <- as.data.frame(cbind(data.all[!is.na(data.all$shot_made_flag),'minutes_remaining'],grps2))
+colnames(grps2) <- c('minutes_remaining','groups')
+table(grps2$minutes_remaining,grps2$groups)
+
+
+grps3 <- cutree(minClust,k=4)
+grps3 <- as.data.frame(cbind(data.all[!is.na(data.all$shot_made_flag),'minutes_remaining'],grps3))
+colnames(grps3) <- c('minutes_remaining','groups')
+table(grps3$minutes_remaining,grps3$groups)
+
+## ward's method can't perfectly cluster minutes_remaining = 6, try complete?
+minClustComp <- hclust(d,'complete')
+plot(minClustComp)
+
+## cuts on the complete distance
+grps1 <- cutree(minClustComp,k=2)
+grps1 <- as.data.frame(cbind(data.all[!is.na(data.all$shot_made_flag),'minutes_remaining'],grps1))
+colnames(grps1) <- c('minutes_remaining','groups')
+table(grps1$minutes_remaining,grps1$groups)
+
+grps2 <- cutree(minClustComp,k=3)
+grps2 <- as.data.frame(cbind(data.all[!is.na(data.all$shot_made_flag),'minutes_remaining'],grps2))
+colnames(grps2) <- c('minutes_remaining','groups')
+table(grps2$minutes_remaining,grps2$groups)
+
+grps3 <- cutree(minClustComp,k=4)
+grps3 <- as.data.frame(cbind(data.all[!is.na(data.all$shot_made_flag),'minutes_remaining'],grps3))
+colnames(grps3) <- c('minutes_remaining','groups')
+table(grps3$minutes_remaining,grps3$groups)
+## let's go with grps2 or k=3 because we intend on splitting seconds left as well.
+
+## speaking of... let's try to cluster those in the final minute of the quarter
+d <- dist(data.all[!is.na(data.all$shot_made_flag) & data.all$minutes_remaining == 0,
+                   c('seconds_remaining','shot_made_flag')])
+secClust <- hclust(d,'complete')
+plot(secClust)
+
+secGrps1 <- cutree(secClust,k=2)
+secGrps1 <- as.data.frame(cbind(data.all[!is.na(data.all$shot_made_flag) & data.all$minutes_remaining == 0,
+                                         'seconds_remaining'],
+                                secGrps1))
+colnames(secGrps1) <- c('seconds_remaining','groups')
+table(secGrps1$groups,secGrps1$seconds_remaining)
+
+secGrps2 <- cutree(secClust,k=3)
+secGrps2 <- as.data.frame(cbind(data.all[!is.na(data.all$shot_made_flag) & data.all$minutes_remaining == 0,
+                                         'seconds_remaining'],
+                                secGrps2))
+colnames(secGrps2) <- c('seconds_remaining','groups')
+table(secGrps2$groups,secGrps2$seconds_remaining)
+
+secGrps3 <- cutree(secClust,k=6)
+secGrps3 <- as.data.frame(cbind(data.all[!is.na(data.all$shot_made_flag) & data.all$minutes_remaining == 0,
+                                         'seconds_remaining'],
+                                secGrps3))
+colnames(secGrps3) <- c('seconds_remaining','groups')
+table(secGrps3$groups,secGrps3$seconds_remaining)
+## pretty damn close to ten second buckets, let's start with those
+
+
+
+####################################################################################################
+## Opponent, conference, home/away data and plots
+####################################################################################################
+## opponent
+oppMap <- data.frame(opponent=factor(levels(data.all$opponent),levels=levels(data.all$opponent)),
+                     conference=c('East','East','East','East','East','East','West','West','East',
+                                  'West','West','East','West','West','East','East','West','East',
+                                  'West','West','East','West','East','East','West','West','West',
+                                  'West','West','East','West','West','East'))
+opponent.tbl <- as.data.frame(data.all %>% 
+                                   filter(!is.na(shot_made_flag)) %>% 
+                                   select(opponent,shot_made_flag) %>% 
+                                   table)
+opponent.tbl <- dcast(opponent.tbl,opponent ~ shot_made_flag,value.var='Freq')
+colnames(opponent.tbl)[2:3] <- c('Miss','Make')
+opponent.tbl <- opponent.tbl %>% mutate(Pct = Make / (Make + Miss)) %>% arrange(desc(Pct))
+opponent.tbl <- opponent.tbl %>% inner_join(.,oppMap,by='opponent')
+opponent.tbl$opponent <- factor(opponent.tbl$opponent,
+                                        levels=opponent.tbl[order(opponent.tbl$Pct,decreasing=TRUE),
+                                                             'opponent'])
+print(opponent.tbl)
+
+multiplot(
+    ggplot(opponent.tbl,aes(x=factor(opponent),y=Pct,fill=conference)) + 
+        geom_bar(stat='identity') + 
+        ggtitle('FG% by opponent'),
+    ggplot(opponent.tbl,aes(x=factor(opponent),y=Make+Miss,fill=conference)) + 
+        geom_bar(stat='identity') +
+        ggtitle('Total shots by opponent')
+)
+
+multiplot(
+    ggplot(opponent.tbl,aes(x=factor(conference),y=Pct,fill=conference)) + 
+        geom_bar(stat='identity') + 
+        ggtitle('FG% by conference'),
+    ggplot(opponent.tbl,aes(x=factor(conference),y=Make+Miss,fill=conference)) + 
+        geom_bar(stat='identity') +
+        ggtitle('Total shots by conference')
+)
+## generally better against the west
+
+
+## home vs away
+home.away.tbl <- data.all %>% mutate(homeaway=ifelse(substring(matchup,5,6)=='vs','Home','Away'))
+home.away.tbl <- as.data.frame(home.away.tbl %>% 
+                                  filter(!is.na(shot_made_flag)) %>% 
+                                  select(homeaway,shot_made_flag) %>% 
+                                  table)
+home.away.tbl <- dcast(home.away.tbl,homeaway ~ shot_made_flag,value.var='Freq')
+colnames(home.away.tbl)[2:3] <- c('Miss','Make')
+home.away.tbl <- home.away.tbl %>% mutate(Pct = Make / (Make + Miss)) %>% arrange(desc(Pct))
+home.away.tbl$homeaway <- factor(home.away.tbl$homeaway,
+                                 levels=home.away.tbl[order(home.away.tbl$Pct,decreasing=TRUE),
+                                                     'homeaway'])
+print(home.away.tbl)
+
+multiplot(
+    ggplot(home.away.tbl,aes(x=homeaway,y=Pct,fill=homeaway)) + 
+        geom_bar(stat='identity') + 
+        ggtitle('FG% by home.away'),
+    ggplot(home.away.tbl,aes(x=homeaway,y=Make+Miss,fill=homeaway)) + 
+        geom_bar(stat='identity') +
+        ggtitle('Total shots by home.away')
+)
+## better at home, as expected..roughly 2 pctg points
+
+
+
+####################################################################################################
+## Test set exploration (worried about this "leakage" thing in the kaggle description)
+####################################################################################################
+## number of shots in test by season
+test <- data.all[is.na(data.all$shot_made_flag),]
+test.season <- test %>% 
+    select(season) %>% 
+    dplyr::group_by(season) %>% 
+    dplyr::summarise(shotsInTest=n())
+ggplot(test.season,aes(x=season,y=shotsInTest,fill=season)) + 
+    geom_bar(stat='identity')
